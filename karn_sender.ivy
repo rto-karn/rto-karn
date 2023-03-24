@@ -1,0 +1,130 @@
+#lang ivy1.8
+include collections
+include numbers
+
+module sender = {
+    # A Karn sender
+    var clock            : nat
+    var num_sent(I:nat)  : nat
+    var tim_sent(I:nat)  : nat
+    var high_sent        : nat 
+    var max_ack          : nat
+    var sample           : nat
+    var old_max_ack      : nat
+    var just_rcvd        : bool
+    var just_sampled     : bool
+    var noSkips          : bool
+
+    after init {
+        clock        := 0;
+        num_sent(I)  := 0;
+        tim_sent(I)  := 0;
+        high_sent    := 0;
+        max_ack      := 0;
+        old_max_ack  := 0;
+        just_rcvd    := false;
+        just_sampled := false;
+        noSkips      := true;
+    }
+
+    action transmit(value_p:nat) 
+    action receive(value_d:nat)  
+
+    specification {
+        before transmit {
+            require value_p > 0;
+            if (exists I. I > 0 & I < value_p & num_sent(I) = 0) {
+                noSkips := false;
+            }
+        }
+
+        after transmit {
+            clock := clock + 1;
+            ensure tim_sent(I) < clock;
+
+            num_sent(value_p) := num_sent(value_p) + 1;
+            if tim_sent(value_p) = 0 {
+                tim_sent(value_p) := clock;
+            }
+            else if num_sent(value_p) = 1 {
+                high_sent := value_p;
+            }
+            just_rcvd := false;
+            just_sampled := false;
+        }
+
+        invariant num_sent(I) = 0 <-> tim_sent(I) = 0
+
+        invariant tim_sent(I) <= clock
+
+        invariant tim_sent(I) > 0 & tim_sent(I) = tim_sent(K) -> I = K
+
+        # The critical thing is that before we BEGIN sampling, we must have
+        # already sent old_max_ack once.
+        after receive {
+            clock := clock + 1;
+            old_max_ack := max_ack;
+            if value_d > max_ack {
+                # If there were no re-transmissions since the last ack, then ...
+                if (max_ack > 0 & 
+                    (forall J. max_ack <= J & J < value_d -> num_sent(J) = 1)) |
+                   (max_ack = 0 & 
+                    (forall J. 0 < J & J < value_d -> num_sent(J) = 1))
+                {
+                    # The sample is the time since we sent the prior max ack.
+                    sample := clock - tim_sent(max_ack);
+                    just_sampled := true;
+                    ensure old_max_ack = 0 -> tim_sent(old_max_ack) = 0;
+                }
+                else {
+                    just_sampled := false;
+                }
+                max_ack := value_d;
+                ensure max_ack = value_d;
+            }
+            else just_sampled := false;
+            ensure tim_sent(P) < clock;
+            just_rcvd := true;
+        }
+
+        invariant tim_sent(0) = 0
+        invariant just_sampled -> just_rcvd
+    }
+
+    invariant num_sent(P) > 0 <-> 0 < tim_sent(P) & tim_sent(P) <= clock
+    
+    ## invariant I1 ###
+    invariant noSkips & 0 < I & I < J & num_sent(J) > 0 -> num_sent(I) > 0
+    
+    ## invariant I2 ##
+    invariant noSkips & 0 < I & I < J & num_sent(J) > 0  -> tim_sent(I) < tim_sent(J) 
+    
+    invariant old_max_ack <= max_ack
+    invariant just_sampled -> old_max_ack < max_ack
+
+    invariant tim_sent(I) <= clock
+
+    invariant just_sampled & old_max_ack > 0 -> 
+        (forall I. I >= old_max_ack & I < max_ack -> num_sent(I) = 1)
+
+    invariant just_sampled & old_max_ack = 0 -> 
+        (forall I. I > old_max_ack & I < max_ack -> num_sent(I) = 1)
+
+    invariant just_sampled     & 
+              old_max_ack > 0  & 
+              old_max_ack <= K & 
+              K < max_ack ->
+                num_sent(K) = 1 & tim_sent(K) > 0
+
+    # Observation 3: whenever the sender computes a new sample, provided it has
+    # received so far at least two distinct acknowledgments from the receiver,
+    # the new sample is an upper bound on all the actual RTTs since the last 
+    # sample.
+    invariant just_sampled     &
+              noSkips          &
+              old_max_ack > 0  &
+              old_max_ack <= I &
+              I < max_ack      -> tim_sent(I) >= tim_sent(old_max_ack) &
+                                  tim_sent(I) < clock &
+                                  sample >= clock - tim_sent(I)
+}
