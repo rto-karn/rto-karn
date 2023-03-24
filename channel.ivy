@@ -6,6 +6,8 @@ include collections
 include simple_receiver
 include karn_sender
 
+instance vec : rel_array(nat,nat)
+
 module channel = {
 
     instance endL : receiver
@@ -15,6 +17,10 @@ module channel = {
     relation sentRL(DG: nat)
     relation rcvdLR(DG: nat)
     relation rcvdRL(DG: nat)
+
+    var l2r : vec 
+    var l_readLoc : nat 
+    var fifo : bool
 
     var old_rtog : bool
     var rtog : bool # true means transmit next
@@ -26,6 +32,10 @@ module channel = {
         rcvdRL(DG) := false;
         rtog       := false; 
         old_rtog   := true;
+
+        l2r := vec.empty;
+        l_readLoc := 0;
+        fifo := true;
    	}
 
     implement endL.transmit(dg:nat){
@@ -34,6 +44,7 @@ module channel = {
         ensure dg >= endR.max_ack;
         old_rtog := rtog;
         rtog := false;
+        l2r := l2r.append(dg);
     }
 
     implement endR.transmit(dg:nat){
@@ -53,6 +64,14 @@ module channel = {
         if (sentLR(dg)) {
             endR.receive(dg);
             rcvdLR(dg) := true;
+            # Are we still FIFO? (receiver->sender)
+            if (fifo & l_readLoc < l2r.end) {
+                if (l2r.value_is(l_readLoc, dg)) {
+                    l_readLoc := l_readLoc + 1;
+                } else {
+                    fifo := false;
+                }
+            }
         }
     }
 
@@ -93,10 +112,8 @@ module channel = {
               endL.prev_ack ~= endL.cur_ack & 
               0 < K & K < endL.cur_ack      -> rcvdRL(K) & ~rcvdRL(endL.cur_ack)
 
-    # Observation 4 upper bound
+    # Lemmas for (O3)
     invariant endR.just_sampled -> sentLR(endR.max_ack)
-
-    # Some small lemmas needed to get second half of Obs 4 to go through
     invariant 0 < I & I < endR.max_ack -> endL.seen(I)
     invariant endL.prev_ack < I & I < endL.cur_ack -> ~sentLR(I)
     invariant endL.prev_ack < endL.cur_ack &
@@ -108,14 +125,13 @@ module channel = {
     invariant endL.prev_ack < endL.cur_ack & rcvdLR(endL.cur_ack) ->
                     endR.max_ack = endL.cur_ack
 
-    # Observation 4 lower bound
+    # Lower bound on (O3)
     invariant endL.prev_ack ~= endL.cur_ack  & # rcvr is "sending new stuff"
               endR.just_sampled              & # sender just sampled
               rcvdLR(endL.cur_ack) ->          # sender rcvd latest ack
                     endR.old_max_ack <= endL.last_found &
                     endL.last_found < endR.max_ack
 
-    # Lemmas for Observation 5.
     invariant endL.cur_ack >= endR.max_ack
     invariant rcvdLR(endL.cur_ack) -> endR.max_ack = endL.cur_ack
     invariant endR.max_ack > 0 -> rcvdLR(endR.max_ack)
@@ -131,7 +147,7 @@ module channel = {
               endL.prev_ack ~= endL.cur_ack ->
                     endR.old_max_ack = endL.prev_ack
 
-    # Observation 4 bounds receiver's last_found in the range of sender's 
+    # (O3) bounds receiver's last_found in the range of sender's 
     # [old max ack, max ack).  The ambiguity is because sender's old max ack
     # might not match receiver's prev_ack, in the case where some receiver
     # messages were dropped.  Conversely, if receiver's prev_ack made it 
@@ -140,6 +156,11 @@ module channel = {
               endR.old_max_ack ~= endR.max_ack &
               endL.prev_ack ~= endL.cur_ack 
                 -> endL.last_found = endR.old_max_ack
+
+    # (O4) FIFO case for sender sampling
+    invariant endR.just_sampled &
+              endR.noSkips      -> 
+                    endR.sample = endR.clock - endR.tim_sent(endR.old_max_ack)
 
 }
 
