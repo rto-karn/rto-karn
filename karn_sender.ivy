@@ -93,10 +93,10 @@ module sender = {
 
     invariant num_sent(P) > 0 <-> 0 < tim_sent(P) & tim_sent(P) <= clock
     
-    ## invariant I1 ###
+    ## invariant I1 of (O2) ###
     invariant noSkips & 0 < I & I < J & num_sent(J) > 0 -> num_sent(I) > 0
     
-    ## invariant I2 ##
+    ## invariant I2 of (O2) ##
     invariant noSkips & 0 < I & I < J & num_sent(J) > 0  -> tim_sent(I) < tim_sent(J) 
     
     invariant old_max_ack <= max_ack
@@ -116,7 +116,7 @@ module sender = {
               K < max_ack ->
                 num_sent(K) = 1 & tim_sent(K) > 0
 
-    # Observation 3: whenever the sender computes a new sample, provided it has
+    # (O3): whenever the sender computes a new sample, provided it has
     # received so far at least two distinct acknowledgments from the receiver,
     # the new sample is an upper bound on all the actual RTTs since the last 
     # sample.
