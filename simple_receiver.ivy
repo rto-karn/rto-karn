@@ -80,10 +80,9 @@ module receiver = {
     # precisely the same statement.
     invariant I > 0 & I < cur_ack -> seen(I)
 
-    # (1) acks are monotonically increasing
+    # (O1) acks are monotonically increasing
     invariant prev_ack <= cur_ack
 
-    # Observation 2
     invariant prev_ack ~= cur_ack -> prev_ack = last_found
 
 }
