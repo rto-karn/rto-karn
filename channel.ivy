@@ -1,0 +1,150 @@
+#lang ivy1.8
+
+include numbers
+include collections
+
+include simple_receiver
+include karn_sender
+
+module channel = {
+
+    instance endL : receiver
+    instance endR : sender
+
+    relation sentLR(DG: nat)
+    relation sentRL(DG: nat)
+    relation rcvdLR(DG: nat)
+    relation rcvdRL(DG: nat)
+
+    var old_rtog : bool
+    var rtog : bool # true means transmit next
+
+    after init {
+        sentLR(DG) := false;
+        sentRL(DG) := false;
+        rcvdLR(DG) := false;
+        rcvdRL(DG) := false;
+        rtog       := false; 
+        old_rtog   := true;
+   	}
+
+    implement endL.transmit(dg:nat){
+        require rtog = true;
+        sentLR(dg) := true;
+        ensure dg >= endR.max_ack;
+        old_rtog := rtog;
+        rtog := false;
+    }
+
+    implement endR.transmit(dg:nat){
+        sentRL(dg) := true; 
+    }
+
+    action endL_receive(dg:nat) = {
+        if (sentRL(dg) & rtog = false) {
+            endL.receive(dg);
+            rcvdRL(dg) := true;
+            old_rtog := rtog;
+            rtog := true;
+        }
+    }
+
+    action endR_receive(dg:nat) = {
+        if (sentLR(dg)) {
+            endR.receive(dg);
+            rcvdLR(dg) := true;
+        }
+    }
+
+    # receiver toggles
+    invariant rtog ~= old_rtog
+
+    # everything rcvd was sent
+    invariant rcvdLR(DG) -> sentLR(DG)
+    invariant rcvdRL(DG) -> sentRL(DG)
+
+    # receiver's "seen" indeed tracks everything it's seen
+    invariant rcvdRL(DG) <-> endL.seen(DG)
+
+    # receiver's "cur_ack" indeed tracks the current ack
+    invariant sentLR(K) -> K <= endL.cur_ack
+
+    # receiver cumulatively acks
+    invariant sentLR(K) & J < K & 0 < J -> rcvdRL(J)
+
+    # consequently, when the sender receives an ack, it knows the receiver has
+    # received all lesser values.
+    invariant rcvdLR(A) & 0 < P & P < A -> rcvdRL(P)
+
+    # The max_ack records a value s.t. the receiver has received all previous 
+    # values, and has sent the max_ack toward the sender.
+    invariant endR.max_ack > 0 -> (forall I. I > 0 & I < endR.max_ack 
+                                    -> rcvdRL(I)) & 
+                                  sentLR(endR.max_ack)
+
+    # By induction, it follows that the old_max_ack also tracks some value <
+    # than max_ack and which the receiver has sent toward the sender.  (The <
+    # than max_ack part is proven locally in the receiver.)
+    invariant endR.old_max_ack > 0 -> sentLR(endR.old_max_ack)
+
+    # If the cur_ack has been sent and is not equal to the prev_ack then all
+    # packets in (0, cur_ack) have been received.
+    invariant sentLR(endL.cur_ack)          & 
+              endL.prev_ack ~= endL.cur_ack & 
+              0 < K & K < endL.cur_ack      -> rcvdRL(K) & ~rcvdRL(endL.cur_ack)
+
+    # Observation 4 upper bound
+    invariant endR.just_sampled -> sentLR(endR.max_ack)
+
+    # Some small lemmas needed to get second half of Obs 4 to go through
+    invariant 0 < I & I < endR.max_ack -> endL.seen(I)
+    invariant endL.prev_ack < I & I < endL.cur_ack -> ~sentLR(I)
+    invariant endL.prev_ack < endL.cur_ack &
+              ~rcvdLR(endL.cur_ack)
+                    -> endR.max_ack <= endL.last_found
+    
+    # Now, let's try and tie this to the actual sampling logic.  Note, the next
+    # invariant is necessary for the subsequent one to go through.
+    invariant endL.prev_ack < endL.cur_ack & rcvdLR(endL.cur_ack) ->
+                    endR.max_ack = endL.cur_ack
+
+    # Observation 4 lower bound
+    invariant endL.prev_ack ~= endL.cur_ack  & # rcvr is "sending new stuff"
+              endR.just_sampled              & # sender just sampled
+              rcvdLR(endL.cur_ack) ->          # sender rcvd latest ack
+                    endR.old_max_ack <= endL.last_found &
+                    endL.last_found < endR.max_ack
+
+    # Lemmas for Observation 5.
+    invariant endL.cur_ack >= endR.max_ack
+    invariant rcvdLR(endL.cur_ack) -> endR.max_ack = endL.cur_ack
+    invariant endR.max_ack > 0 -> rcvdLR(endR.max_ack)
+    invariant endR.old_max_ack > 0 -> rcvdLR(endR.old_max_ack)
+    invariant rcvdLR(I) -> I <= endR.max_ack
+    invariant rcvdLR(I) & I < endR.max_ack -> I <= endR.old_max_ack
+    invariant endL.prev_ack < I & I < endL.cur_ack -> ~rcvdLR(I)
+    invariant endL.prev_ack < I & I < endL.cur_ack -> I ~= endR.old_max_ack
+    invariant endR.old_max_ack <= endL.prev_ack |
+              endR.old_max_ack = endL.cur_ack
+    invariant rcvdLR(endL.prev_ack) & rcvdLR(endL.cur_ack) &
+              endR.old_max_ack ~= endR.max_ack &
+              endL.prev_ack ~= endL.cur_ack ->
+                    endR.old_max_ack = endL.prev_ack
+
+    # Observation 4 bounds receiver's last_found in the range of sender's 
+    # [old max ack, max ack).  The ambiguity is because sender's old max ack
+    # might not match receiver's prev_ack, in the case where some receiver
+    # messages were dropped.  Conversely, if receiver's prev_ack made it 
+    # through, then they must match!  Call this Observation 5.
+    invariant rcvdLR(endL.prev_ack) & rcvdLR(endL.cur_ack) &
+              endR.old_max_ack ~= endR.max_ack &
+              endL.prev_ack ~= endL.cur_ack 
+                -> endL.last_found = endR.old_max_ack
+
+}
+
+instance c:channel
+export c.endR_receive
+export c.endL_receive
+export c.endR.transmit
+export c.endL.transmit
