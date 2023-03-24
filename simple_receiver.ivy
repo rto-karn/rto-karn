@@ -1,0 +1,89 @@
+#lang ivy1.8
+include collections
+include numbers
+
+module receiver = {
+    # A cumulative acks recevier
+    var seen(I:nat) : bool # has pkt.id=I been received
+    var prev_ack    : nat
+    var cur_ack     : nat
+    var last_found  : nat
+    var cur_ack_1st : bool
+
+    after init {
+       seen(I)    := false;
+       cur_ack    := 1;
+       prev_ack   := 0;
+       last_found := 0;
+    }
+
+    action transmit(value_r:nat) 
+    action receive(value_d:nat)  
+    
+    specification {
+        before transmit {
+            require value_r > 0;
+            require I > 0 & I < value_r -> seen(I);
+            require ~seen(value_r);
+            # each new ack transmitted follows the delivery of a packet with the 
+            # previous ack.
+            ensure value_r > cur_ack & cur_ack > 0 -> seen(cur_ack);
+        }
+
+        after transmit {
+            prev_ack := cur_ack;
+            cur_ack := value_r;
+            ensure last_found <= value_r;
+            ensure ~seen(cur_ack);
+        }
+
+        after receive {
+            if (cur_ack <= value_d & ~seen(value_d) & 
+                forall I. 0 < I & I < value_d -> seen(I)) 
+            {
+                last_found    := value_d;
+                prev_ack      := cur_ack;
+                cur_ack       := value_d;
+                seen(value_d) := true;
+                ensure prev_ack <= value_d & seen(cur_ack);
+                while seen(cur_ack)
+                    invariant 0 < I & I < cur_ack -> seen(I)
+                    invariant last_found <= cur_ack
+                    invariant prev_ack <= value_d
+                {
+                    cur_ack := cur_ack + 1;
+                }
+                ensure prev_ack < cur_ack;
+            } else {
+                seen(value_d) := true;
+                ensure value_d ~= cur_ack;
+            }
+        }
+    }
+
+    invariant cur_ack > 0
+
+    invariant 0 < I & I < cur_ack -> seen(I)
+    invariant ~seen(cur_ack)
+    invariant 0 < cur_ack -> last_found < cur_ack
+    invariant prev_ack < cur_ack -> last_found < cur_ack & 
+                                     prev_ack <= last_found
+    invariant cur_ack ~= prev_ack -> cur_ack > prev_ack
+    invariant last_found <= cur_ack
+    invariant 0 < I & I <= last_found -> seen(I)
+    invariant 0 < prev_ack & prev_ack < cur_ack -> seen(prev_ack)
+    
+    # When the receiver receives only values ~= the cur_ack, it re-sends cur_ack
+    invariant ~seen(prev_ack) & 0 < prev_ack -> prev_ack = cur_ack
+
+    # Acks are cumulative.  Also kind of implies Obs (2), although, it's not
+    # precisely the same statement.
+    invariant I > 0 & I < cur_ack -> seen(I)
+
+    # (1) acks are monotonically increasing
+    invariant prev_ack <= cur_ack
+
+    # Observation 2
+    invariant prev_ack ~= cur_ack -> prev_ack = last_found
+
+}
