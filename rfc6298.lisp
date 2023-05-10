@@ -420,3 +420,633 @@ Lim N->inf R(N) = 0 + 2r
        (rttvar0 1/2))
   (list (expt (car (last (recurse-rttvars beta srtts rttvar0 ss))) 2)
 	(sample-variance-squared ss)))
+
+(defthm
+   important-ceiling-lemma
+   (implies (and (pos-rationalp x)
+                 (pos-rationalp y)
+                 (< (ceiling x 1) (ceiling y 1)))
+            (and (<= x (ceiling x 1))
+                 (< (ceiling x 1) y)))
+   :instructions (:pro (:claim (<= x (ceiling x 1)))
+                       (:casesplit (<= y x))
+                       (:claim (equal x y))
+                       :prove
+                       (:claim (implies (<= y (ceiling x 1))
+                                        (equal (ceiling y 1) (ceiling x 1))))
+                       :prove))
+
+;; https://math.stackexchange.com/questions/233670/nested-division-in-the-ceiling-function
+(defthm ceiling-division-lemma
+        (implies (and (posp m)
+                      (posp n)
+                      (pos-rationalp x))
+                 (equal (ceiling (/ x (* m n)) 1)
+                        (ceiling (/ (ceiling (/ x m) 1) n) 1)))
+        :instructions
+        (:pro (:claim (< (- (ceiling (/ x m) 1) 1) (/ x m)))
+              (:claim (<= (/ x m) (ceiling (/ x m) 1)))
+              (:claim (< (/ (- (ceiling (/ x m) 1) 1) n)
+                         (/ x (* m n))))
+              (:claim (<= (/ x (* m n))
+                          (/ (ceiling (/ x m) 1) n)))
+              (:claim (<= (ceiling (/ x (* m n)) 1)
+                          (ceiling (/ (ceiling (/ x m) 1) n) 1)))
+              (:use (:instance important-ceiling-lemma
+                               (x (* x (/ (* m n))))
+                               (y (* (ceiling (* x (/ m)) 1) (/ n)))))
+              :pro
+              (:casesplit (< (ceiling (* x (/ (* m n))) 1)
+                             (ceiling (* (ceiling (* x (/ m)) 1) (/ n))
+                                      1)))
+              (:claim (and (<= (* x (/ (* m n)))
+                               (ceiling (* x (/ (* m n))) 1))
+                           (< (ceiling (* x (/ (* m n))) 1)
+                              (* (ceiling (* x (/ m)) 1) (/ n)))))
+              (:drop 1)
+              (:claim (<= (/ x m)
+                          (* n (ceiling (* x (/ (* m n))) 1))))
+              (:claim (< (* n (ceiling (* x (/ (* m n))) 1))
+                         (ceiling (/ x m) 1)))
+              (:claim (< k k))
+              :prove :prove))
+
+(property add-into-ceil (m :nat x :pos-rational)
+  (equal (+ m (Ceiling x 1))
+	 (Ceiling (+ m x) 1)))
+
+(property divide-ineq (x :pos-rational y :pos-rational z :pos-rational)
+  (implies (and (< 0 x) (<= y z))
+	   (<= (/ y x) (/ z x))))
+
+(property multiply-ineq (x :pos-rational y :pos-rational z :pos-rational)
+  (implies (and (< 0 x) (<= y z))
+	   (<= (* y x) (* z x))))
+
+(defthm step-1-kens-proof
+        (implies (and (pos-rationalp a)
+                      (< a 1)
+                      (equal k (ceiling (/ a (- 1 a)) 1)))
+                 (<= a (/ k (1+ k))))
+        :instructions (:pro (:claim (<= (/ a (- 1 a)) k))
+                            (:use (:instance multiply-ineq (x (- 1 a))
+                                             (y (* a (/ (+ 1 (- a)))))
+                                             (z k)))
+                            :pro
+                            (:claim (<= (* (* a (/ (+ 1 (- a)))) (+ 1 (- a)))
+                                        (* k (+ 1 (- a)))))
+                            (:drop 1)
+                            (:claim (<= a (* k (- 1 a))))
+                            (:drop 5)
+                            (:claim (equal (* k (+ 1 (- a))) (- k (* k a))))
+                            (:claim (<= a (+ k (- (* k a)))))
+                            (:drop 5 6)
+                            (:claim (<= (+ a (* k a)) k))
+                            (:claim (equal (+ a (* k a)) (* a (1+ k))))
+                            (:claim (<= (* a (1+ k)) k))
+                            (:use (:instance divide-ineq (x (1+ k))
+                                             (y (* a (1+ k)))
+                                             (z k)))
+                            :pro
+                            (:claim (<= (* (* a (+ 1 k)) (/ (+ 1 k)))
+                                        (* k (/ (+ 1 k)))))
+                            (:drop 1)
+                            :prove))
+
+(definecd fn (a :pos-rational n :pos-rational) :pos-rational
+  :ic (< a 1)
+  (let ((k (ceiling (/ a (- 1 a)) 1)))
+    (/ (* k (expt a k)) n)))
+
+;; Claim: k a^k / k = a^k.
+(property k*a^k/k=a^k (k :pos a :pos-rational)
+  (equal (/ (* k (expt a k)) k)
+	 (expt a k)))
+
+(defthm
+     base-case-kens-proof
+     (implies (and (pos-rationalp a) (< a 1))
+              (let ((k (ceiling (/ a (- 1 a)) 1)))
+                   (equal (fn a k) (expt a k))))
+     :instructions
+     (:pro (:claim (posp (ceiling (* a (/ (+ 1 (- a)))) 1)))
+           (:use (:instance k*a^k/k=a^k
+                            (k (ceiling (* a (/ (+ 1 (- a)))) 1))
+                            (a a)))
+           :pro
+           (:claim (equal (* (* (ceiling (* a (/ (+ 1 (- a)))) 1)
+                                (expt a (ceiling (* a (/ (+ 1 (- a)))) 1)))
+                             (/ (ceiling (* a (/ (+ 1 (- a)))) 1)))
+                          (expt a (ceiling (* a (/ (+ 1 (- a)))) 1))))
+           (:drop 1)
+           (:use (:instance fn-definition-rule (a a)
+                            (n (ceiling (/ a (- 1 a)) 1))))
+           :pro
+           (:claim (equal (fn a (ceiling (* a (/ (+ 1 (- a)))) 1))
+                          (let ((k (ceiling (* a (/ (+ 1 (- a)))) 1))
+                                (n (ceiling (* a (/ (+ 1 (- a)))) 1)))
+                               (* (* k (expt a k)) (/ n)))))
+           (:drop 1)
+           (:claim (equal (fn a (ceiling (* a (/ (+ 1 (- a)))) 1))
+                          (* (* (ceiling (* a (/ (+ 1 (- a)))) 1)
+                                (expt a (ceiling (* a (/ (+ 1 (- a)))) 1)))
+                             (/ (ceiling (* a (/ (+ 1 (- a)))) 1)))))
+           (:claim (iff (let ((k (ceiling (* a (/ (+ 1 (- a)))) 1)))
+                             (equal (fn a k) (expt a k)))
+                        (equal (fn a (ceiling (* a (/ (+ 1 (- a)))) 1))
+                               (expt a (ceiling (* a (/ (+ 1 (- a)))) 1)))))
+           (:claim (equal (fn a (ceiling (* a (/ (+ 1 (- a)))) 1))
+                          (expt a (ceiling (* a (/ (+ 1 (- a)))) 1))))
+           :prove))
+
+(property div-lem-ind-step (k :nat n :nat)
+  (implies (<= k n)
+	   (<= (/ k (1+ k))
+	       (/ n (1+ n)))))
+
+(property repl-mul-<=
+  (a :pos-rational b :pos-rational x :pos-rational z :pos-rational)
+  (implies (and (<= a b)
+		(<= x (* a z)))
+	   (<= x (* b z))))
+
+(defthm
+  kens-lemma-2
+  (implies (and (posp k)
+                (posp n)
+                (pos-rationalp a)
+                (<= (expt a (+ 1 n))
+                    (* (* k (expt a k)) (/ n) a))
+                (<= a (/ n (1+ n))))
+           (<= (expt a (+ 1 n))
+               (* k (expt a k) (/ (1+ n)))))
+  :instructions (:pro (:use (:instance repl-mul-<= (x (expt a (+ 1 n)))
+                                       (a a)
+                                       (b (* n (/ (+ 1 n))))
+                                       (z (* k (expt a k) (/ n)))))
+                      :pro
+                      (:claim (<= (expt a (+ 1 n))
+                                  (* (* n (/ (+ 1 n)))
+                                     k (expt a k)
+                                     (/ n))))
+                      (:drop 1)
+                      (:claim (equal (* (* n (/ (+ 1 n))) k (expt a k) (/ n))
+                                     (* (* (/ (+ 1 n))) k (expt a k))))
+                      :prove))
+
+(defthm inductive-step-kens-proof
+        (implies (and (pos-rationalp a)
+                      (< a 1)
+                      (equal k (ceiling (/ a (- 1 a)) 1))
+                      (natp n)
+                      (<= k n)
+                      (equal fnk (fn a n))
+                      (<= (expt a n) fnk))
+                 (<= (expt a (1+ n)) (fn a (1+ n))))
+        :instructions
+        (:pro (:use (:instance step-1-kens-proof (a a)))
+              :pro (:claim (<= a (* k (/ (+ 1 k)))))
+              (:drop 1)
+              (:use (:instance div-lem-ind-step (k k)
+                               (n n)))
+              :pro
+              (:claim (<= (/ k (1+ k)) (/ n (1+ n))))
+              (:drop 1)
+              (:claim (<= a (/ n (1+ n))))
+              (:use (:instance multiply-ineq (x a)
+                               (y (expt a n))
+                               (z fnk)))
+              :pro
+              (:claim (<= (* (expt a n) a) (* fnk a)))
+              (:drop 1)
+              (:claim (equal (* (expt a n) a)
+                             (expt a (1+ n))))
+              (:use (:instance fn-definition-rule (a a)
+                               (n n)))
+              :pro
+              (:claim (equal (fn a n)
+                             (let ((k (ceiling (* a (/ (+ 1 (- a)))) 1)))
+                                  (* (* k (expt a k)) (/ n)))))
+              (:drop 1)
+              (:claim (equal (* fnk a)
+                             (* (* k (expt a k)) (/ n) a)))
+              (:claim (<= (expt a (+ 1 n))
+                          (* (* k (expt a k)) (/ n) a)))
+              (:use (:instance kens-lemma-2 (a a)
+                               (k k)
+                               (n n)))
+              :pro
+              (:claim (and (posp k)
+                           (posp n)
+                           (pos-rationalp a)
+                           (<= (expt a (+ 1 n))
+                               (* (* k (expt a k)) (/ n) a))
+                           (<= a (* n (/ (+ 1 n))))))
+              (:claim (<= (expt a (+ 1 n))
+                          (* k (expt a k) (/ (+ 1 n)))))
+              (:drop 1)
+              (:use (:instance fn-definition-rule (a a)
+                               (n (1+ n))))
+              :pro
+              (:claim (equal (fn a (+ 1 n))
+                             (let ((k (ceiling (* a (/ (+ 1 (- a)))) 1))
+                                   (n (+ 1 n)))
+                                  (* (* k (expt a k)) (/ n)))))
+              (:drop 1)
+              (:claim (equal (let ((k (ceiling (* a (/ (+ 1 (- a)))) 1))
+                                   (n (+ 1 n)))
+                                  (* (* k (expt a k)) (/ n)))
+                             (* (* k (expt a k)) (/ (1+ n)))))
+              (:claim (<= (expt a (1+ n)) (fn a (1+ n))))
+              :prove))
+
+(definec induct-ken (a :pos-rational n :nat) :nat
+  :ic (< a 1)
+  (if (> (ceiling (/ a (- 1 a)) 1) n) 0
+    (1+ (induct-ken a (- n 1)))))
+
+(defthm n>=k->a^n<=fn
+        (implies (and (pos-rationalp a)
+                      (< a 1)
+                      (natp n)
+                      (<= (ceiling (/ a (- 1 a)) 1) n))
+                 (<= (expt a n) (fn a n)))
+        :instructions
+        (:pro (:induct (induct-ken a n))
+              :pro
+              (:casesplit (<= (ceiling (* a (/ (+ 1 (- a)))) 1)
+                              (+ -1 n)))
+              (:claim (natp (+ -1 n)))
+              (:claim (<= (expt a (+ -1 n)) (fn a (+ -1 n))))
+              (:use (:instance inductive-step-kens-proof (a a)
+                               (n (- n 1))
+                               (k (ceiling (* a (/ (+ 1 (- a)))) 1))
+                               (fnk (fn a (+ -1 n)))))
+              :pro
+              (:claim (<= (expt a (+ 1 -1 n))
+                          (fn a (+ 1 -1 n))))
+              :prove (:claim (natp (+ -1 n)))
+              (:claim (equal (ceiling (* a (/ (+ 1 (- a)))) 1)
+                             n))
+              (:use (:instance base-case-kens-proof (a a)))
+              :pro
+              (:claim (equal (fn a (ceiling (* a (/ (+ 1 (- a)))) 1))
+                             (expt a (ceiling (* a (/ (+ 1 (- a)))) 1))))
+              :prove))
+
+(property div-<=-prop (a :pos-rational b0 :pos-rational b1 :pos-rational)
+  (implies (<= b0 b1)
+	   (<= (/ a b1) (/ a b0))))
+
+(property pos-rationalp-ceil (x :pos-rational)
+  (pos-rationalp (ceiling x 1)))
+
+(defthm inequality-over-ceil-frac
+        (implies (and (pos-rationalp x)
+                      (pos-rationalp y))
+                 (<= (/ x (ceiling (/ x y) 1)) y))
+        :instructions (:pro (:claim (<= (/ x y) (ceiling (/ x y) 1)))
+                            (:claim (<= (/ (ceiling (/ x y) 1))
+                                        (/ (/ x y))))
+                            (:claim (<= (/ x (ceiling (/ x y) 1))
+                                        (/ x (/ x y))))
+                            :prove))
+
+(property over-ceil-lte (x :pos-rational)
+  (<= (/ x (ceiling x 1)) 1))
+
+#|
+Let e > 0 arbitrarily.
+Let:
+    k = ceil(a/(1-a))
+    d = ceil(ka^k/e)
+Suppose:
+    n >= max(k, d)
+NTS:
+    a^n <= e
+Proof:
+    By prior result, a^n <= f(n) = ka^k/n
+    Our proof strategy will be to show f(n) <= e.
+    As n >= d, clearly ...
+        ka^k/n <= ka^k/d 
+                = ka^k/ceil(ka^k/e)
+               <= [ ka^k/ceil(ka^k) ] * e
+               <= [ 1 ] * e
+                = e
+    The result immediately follows and we are done.
+|#
+(defthm a^n->0
+        (implies (and (pos-rationalp e)
+                      (pos-rationalp a)
+                      (< a 1)
+                      (equal k (ceiling (/ a (- 1 a)) 1))
+                      (equal d (ceiling (/ (* k (expt a k)) e) 1))
+                      (natp n)
+                      (<= d n)
+                      (<= k n))
+                 (<= (expt a n) e))
+        :instructions
+        (:pro (:use (:instance div-<=-prop (a (* k (expt a k)))
+                               (b0 d)
+                               (b1 n)))
+              :pro
+              (:claim (pos-rationalp (* k (expt a k))))
+              (:use (:instance pos-rationalp-ceil
+                               (x (* (* k (expt a k)) (/ e)))))
+              :pro
+              (:claim (<= (* (* k (expt a k)) (/ n))
+                          (* (* k (expt a k)) (/ d))))
+              (:drop 1 2)
+              (:claim (<= (* (* k (expt a k)) (/ n))
+                          (* (* k (expt a k))
+                             (/ (ceiling (* (* k (expt a k)) (/ e))
+                                         1)))))
+              (:drop 10)
+              (:use (:instance inequality-over-ceil-frac
+                               (x (* k (expt a k)))
+                               (y e)))
+              :pro
+              (:claim (<= (* (* k (expt a k))
+                             (/ (ceiling (* (* k (expt a k)) (/ e)) 1)))
+                          e))
+              (:drop 1)
+              (:use (:instance n>=k->a^n<=fn (a a) (n n)))
+              :pro (:claim (<= (expt a n) (fn a n)))
+              (:drop 1)
+              (:use (:instance fn-definition-rule (a a)
+                               (n n)))
+              :pro
+              (:claim (equal (fn a n)
+                             (let ((k (ceiling (* a (/ (+ 1 (- a)))) 1)))
+                                  (* (* k (expt a k)) (/ n)))))
+              (:drop 1)
+              (:claim (equal (fn a n)
+                             (* (* k (expt a k)) (/ n))))
+              :prove))
+
+;; (claim (pos-rationalp (* e (/ (abs (+ srtt (- x)))))))
+(property pos-rp-lemma (e :pos-rational srtt :rational x :rational)
+  (implies (not (equal srtt x))
+	   (pos-rationalp (* e (/ (abs (+ srtt (- x))))))))
+
+#|
+Let 0 <= A <= B.
+Let C = |A J|.
+Then C <= |B J|.
+|#
+(property abs-ineq-lemma (A :rational B :rational J :rational)
+  (implies (and (<= 0 A)
+		(<= A B))
+	   (<= (abs (* A J))
+	       (abs (* B J)))))
+
+#|
+Given:
+
+(<= (expt (+ 1 (- a)) (+ 1 n))
+        (* e (/ (abs (+ srtt (- x))))))
+
+(equal (abs (+ x (- bnd)))
+           (abs (* (expt (+ 1 (- a)) (+ 1 n))
+                   (+ srtt (- x)))))
+
+Derive:
+
+(claim (<= (abs (* (expt (+ 1 (- a)) (+ 1 n))
+                   (+ srtt (- x)))) (abs (* (* e (/ (abs (+ srtt (- x))))) (+ srtt (- x))))))
+|#
+(property bnd-lemma
+  (a :pos-rational e :pos-rational srtt :rational x :rational n :nat bnd :rational)
+  (implies (and (< a 1)
+		(not (equal srtt x))
+		(<= (expt (+ 1 (- a)) (+ 1 n))
+		    (* e (/ (abs (+ srtt (- x))))))
+		(equal (abs (+ x (- bnd)))
+		       (abs (* (expt (+ 1 (- a)) (+ 1 n))
+			       (+ srtt (- x))))))
+	   (<= (abs (* (expt (+ 1 (- a)) (+ 1 n))
+		       (+ srtt (- x))))
+	       (abs (* (* e (/ (abs (+ srtt (- x))))) (+ srtt (- x))))))
+  :hints (("Goal" :use (:instance abs-ineq-lemma
+				  (A (expt (+ 1 (- a)) (+ 1 n)))
+				  (B (* e (/ (abs (+ srtt (- x))))))
+				  (J (+ srtt (- x)))))))
+
+
+
+(property reduce-abs-abs-over (e :pos-rational y :rational)
+  :hyps (not (equal y 0))
+  (equal (abs (* (* e (/ (abs y))) y)) e))
+
+#|
+(abs (* (* e (/ (abs (+ srtt (- x)))))
+	(+ srtt (- x)))))
+= e
+given e >= 0
+|#
+(property reduce-abs-abs-over-specific
+  (e :pos-rational
+     srtt :rational
+     x :rational)
+  :hyps (not (equal srtt x))
+  (equal (abs (* (* e (/ (abs (+ srtt (- x)))))
+		 (+ srtt (- x))))
+	 e)
+  :hints (("Goal" :use
+	   (:instance reduce-abs-abs-over (e e) (y (+ srtt (- x)))))))
+
+
+#|
+Now let's prove convergence for the bounds on SRTT and RTTVar.
+We will begin with SRTT.
+Both L and H bounds have basically the same shape, which we can
+describe as follows:
+
+    bnd = (1-a)^{n+1} srtt_{i-1} + (1 - (1-a)^{n+1}) x
+
+... where x is a rational (could be positive or negative).
+
+Claim: Lim n->inf bnd = x.
+
+Proof:
+
+    Let e > 0 arbitrarily.
+    Note that bnd = (1-a)^{n+1}[ srtt_{i-1} - x ] + x.
+    Let m = ( srtt_{i-1} - x ) be some rational (pos or neg).
+    Thus bnd = (1-a)^{n+1} m + x.
+    Use prior thm to choose K such that n >= K -> (1-a)^{n+1) <= e/|m|.
+    Then n >= K -> x - e <= bnd <= x + e
+                -> d(bnd, x) <= e.  QED.
+|#
+(defthm
+ srtt-convergence-lemma
+ (implies (and (pos-rationalp a)
+               (< a 1)
+               (equal a1 (- 1 a))
+               (rationalp x)
+               (rationalp srtt)
+               (natp n)
+               (pos-rationalp e)
+               (not (equal srtt x))
+               (equal em (/ e (abs (- srtt x))))
+               (equal k (ceiling (/ a1 (- 1 a1)) 1))
+               (equal d (ceiling (/ (* k (expt a1 k)) em) 1))
+               (<= (1+ k) n)
+               (<= (1+ d) n)
+               (equal bnd
+                      (+ (* (expt (- 1 a) (+ n 1)) srtt)
+                         (* (- 1 (expt (- 1 a) (+ n 1))) x))))
+          (<= (abs (- x bnd)) e))
+ :instructions
+ (:pro
+  (:claim (equal bnd
+                 (+ (* (expt (- 1 a) (1+ n)) (- srtt x))
+                    x)))
+  (:claim (equal (abs (+ x (- bnd)))
+                 (abs (* (expt (+ 1 (- a)) (+ 1 n))
+                         (+ srtt (- x))))))
+  (:use
+   (:instance a^n->0 (a (- 1 a))
+              (e (/ e (abs (- srtt x))))
+              (k (ceiling (/ (- 1 a) (- 1 (- 1 a))) 1))
+              (d (ceiling (/ (* (ceiling (/ (- 1 a) (- 1 (- 1 a))) 1)
+                                (expt (- 1 a)
+                                      (ceiling (/ (- 1 a) (- 1 (- 1 a))) 1)))
+                             (/ e (abs (- srtt x))))
+                          1))
+              (n (1+ n))))
+  :pro
+  (:use (:instance pos-rp-lemma (e e)
+                   (srtt srtt)
+                   (x x)))
+  :pro
+  (:claim (pos-rationalp (* e (/ (abs (+ srtt (- x)))))))
+  (:drop 1)
+  (:claim (pos-rationalp (+ 1 (- a))))
+  (:claim (<= (ceiling (* (* (ceiling (* (+ 1 (- a))
+                                         (/ (+ 1 (- (+ 1 (- a))))))
+                                      1)
+                             (expt (+ 1 (- a))
+                                   (ceiling (* (+ 1 (- a))
+                                               (/ (+ 1 (- (+ 1 (- a))))))
+                                            1)))
+                          (/ (* e (/ (abs (+ srtt (- x)))))))
+                       1)
+              (+ 1 n)))
+  (:claim (<= (ceiling (* (+ 1 (- a))
+                          (/ (+ 1 (- (+ 1 (- a))))))
+                       1)
+              (+ 1 n)))
+  (:claim (<= (expt (+ 1 (- a)) (+ 1 n))
+              (* e (/ (abs (+ srtt (- x)))))))
+  (:drop 1)
+  (:use :instance bnd-lemma (a a)
+        (e e)
+        (srtt srtt)
+        (x x)
+        (n n)
+        (bnd bnd))
+  :pro
+  (:claim (<= (abs (* (expt (+ 1 (- a)) (+ 1 n))
+                      (+ srtt (- x))))
+              (abs (* (* e (/ (abs (+ srtt (- x)))))
+                      (+ srtt (- x))))))
+  (:drop 1)
+  (:use (:instance reduce-abs-abs-over-specific (e e)
+                   (srtt srtt)
+                   (x x)))
+  :pro
+  (:claim (equal (abs (* (* e (/ (abs (+ srtt (- x)))))
+                         (+ srtt (- x))))
+                 e))
+  (:drop 1)
+  :prove))
+
+(in-theory (disable all-eq-works
+		    recurse-srtt-when-N-cons
+		    shift-alpha-summation
+		    base-case-unfold-recurse-srtt
+		    unfold-recurse-srtt
+		    simplify-alpha-sum
+		    further-unfold-recurse-srtt
+		    srtt-is-linear
+		    all-<=-works
+		    nth-ss-is-s
+		    all-<=-works-inside
+		    srtt-rec-is-linear-bc
+		    srtt-rec-proof-inductor-contracts
+		    rttvar-collapses-when-d-srtt-s-bounded
+		    rttvar-right-sum-to-cf
+		    add-into-ceil
+		    divide-ineq
+		    multiply-ineq
+		    k*a^k/k=a^k
+		    div-lem-ind-step
+		    repl-mul-<=
+		    div-<=-prop
+		    pos-rationalp-ceil
+		    over-ceil-lte
+		    pos-rp-lemma
+		    abs-ineq-lemma
+		    bnd-lemma
+		    reduce-abs-abs-over
+		    reduce-abs-abs-over-specific
+		    srtt-rec-is-linear
+		    srtt-bounded-thm
+		    important-ceiling-lemma
+		    ceiling-division-lemma
+		    step-1-kens-proof
+		    base-case-kens-proof
+		    kens-lemma-2
+		    inductive-step-kens-proof
+		    n>=k->a^n<=fn
+		    inequality-over-ceil-frac
+		    a^n->0))
+
+#|
+Now we move onto the RTTVar proof.
+
+    bnd = (1-b)^n rttvar_{i-1} + (1 - (1-b)^n) Del
+        = (1-b)^n [ rttvar_{i-1} - Del ] + Del
+        -> Del
+
+But this follows immediately from our prior result.
+
+In the theorem statement below, we use m to denote n - 1.
+We require n > max(0, k, d).
+We show that under this condition, bnd <= e.
+
+|#
+(defthm rttvar-convergence-lemma
+        (implies (and (pos-rationalp b)
+                      (pos-rationalp b1)
+                      (rationalp del)
+                      (rationalp rttvar)
+                      (natp m)
+                      (pos-rationalp e)
+                      (pos-rationalp em)
+                      (natp k)
+                      (natp d)
+                      (rationalp bnd)
+                      (< b 1)
+                      (equal b1 (- 1 b))
+                      (not (equal rttvar del))
+                      (equal em (/ e (abs (- rttvar del))))
+                      (equal k (ceiling (/ b1 (- 1 b1)) 1))
+                      (equal d (ceiling (/ (* k (expt b1 k)) em) 1))
+                      (<= (1+ k) m)
+                      (<= (1+ d) m)
+                      (equal bnd
+                             (+ (* (expt (- 1 b) (+ m 1)) rttvar)
+                                (* (- 1 (expt (- 1 b) (+ m 1))) del))))
+                 (<= (abs (- del bnd)) e))
+        :instructions ((:use (:instance srtt-convergence-lemma (a b)
+                                        (a1 b1)
+                                        (x del)
+                                        (srtt rttvar)
+                                        (n m)
+                                        (e e)
+                                        (em em)
+                                        (k k)
+                                        (d d)
+                                        (bnd bnd)))))
